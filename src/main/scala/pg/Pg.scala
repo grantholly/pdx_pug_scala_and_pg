@@ -19,12 +19,12 @@ object SelectOne extends App {
 
   val teams = TableQuery[Teams]
 
-  class Members(tag: Tag) extends Table[(Int, String)](tag, "members") {
+  class Members(tag: Tag) extends Table[(Int, String, Int)](tag, "members") {
     def id = column[Int]("id", O.PrimaryKey)
     def team_id = column[Int]("team_id")
     def team_id_fk = foreignKey("fk_teams", id, teams)(r => r.id, onUpdate=ForeignKeyAction.Restrict, onDelete = ForeignKeyAction.Cascade)
     def name = column[String]("name")
-    def * = (id, name)
+    def * = (id, name, team_id)
   }
 
   val members = TableQuery[Members]
@@ -46,14 +46,15 @@ object SelectOne extends App {
     // val ij = members.join(teams).result
     //println(ij.statements.head)
     // also joinLeft, joinRight, joinFull
+    // need to handle nulls with .map when we yield in outer and full joins
     val ij = (for {
       (m, t) <- members.join(teams).on((m, t) => m.team_id === t.id)
     } yield (m.name, t.name)).result
     val oj = (for {
       (m, t) <- members.joinRight(teams).on((m, t) => m.team_id === t.id)
     } yield (m.map(m => m.name), t.name)).result
-    // unions
-    val u = members.union(teams).result
+    // unions intersect and except must be done with scala methods
+    val u = members.map(m => (m.id, m.name)).unionAll(teams)
     //group by
     val q6 = members.groupBy(g => g.name).map{
       case (name, group) => (name, group.map(_.id).sum)
@@ -63,9 +64,9 @@ object SelectOne extends App {
       case (name, count) => count > 1
     }.map(_._2).result
     // insert
-    val q7 = members += (3, "russ")
+    val q7 = members += (3, "russ", 1)
     // update
-    val q8 = members.filter(m => m.id === 1).update(3, "john")
+    val q8 = members.filter(m => m.id === 1).update(3, "john", 1)
     // delete
     val q9 = members.filter(m => m.id === 2).delete
     // sort by
@@ -74,7 +75,7 @@ object SelectOne extends App {
     val q11 = members.drop(2).take(1)
     val q12 = sql"""select * from members;""".as[(Int, String)]
     // upsert
-    val q13 = members.insertOrUpdate((4, "Zoiks"))
+    val q13 = members.insertOrUpdate((4, "Zoiks", 1))
     val q14 =
       sql"""select
            t.name
@@ -82,9 +83,18 @@ object SelectOne extends App {
            on m.team_id = t.id
            where m.name is null;
          """.as[String]
+    // transaction control
+    val q15 = for {
+      _ <- DBIO.seq(
+        members += (10, "Jack", 2),
+        members += (11, "Tony", 2),
+        members.filter(m => m.id >= 10).delete,
+        members.filter(m => m.team_id === 1).update(1, "grant", 10)
+      )
+    } yield DBIO.failed(new Exception("Rolling back")).transactionally
 
     // don't need to unpack the future Any
-    val done: Future[_] = db.run(q14)
+    val done: Future[_] = db.run(q15)
 
     done.onComplete({
       case Success(res) => {
@@ -105,6 +115,18 @@ object SelectOne extends App {
       }
       case Failure(e) => println(e)
     })
+
+    // running a batch
+    val jjj: Future[_] = db.run(DBIO.seq(
+      q13.andThen(
+        q14.andThen(q12)
+          .map(r => r.foreach(s => println(s)))
+      )
+    ))
+
+    Await.result(jj, Duration.Inf)
+    println("running batch")
+    Await.result(jjj, Duration.Inf)
     Await.result(done, Duration.Inf)
   } finally db.close()
 }
