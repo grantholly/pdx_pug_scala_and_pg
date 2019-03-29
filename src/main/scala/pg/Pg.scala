@@ -7,9 +7,9 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
 
-object SelectOne extends App {
+object Pg extends App with PostgresDbClient {
 
-  val db = Database.forConfig("docs")
+  //val db = Database.forConfig("docs")
 
   class Teams(tag: Tag) extends Table[(Int, String)](tag, "teams") {
     def id = column[Int]("id", O.PrimaryKey)
@@ -28,6 +28,24 @@ object SelectOne extends App {
   }
 
   val members = TableQuery[Members]
+
+  val initalMembers = DBIO.seq(
+    members += (1, "grant", 1),
+    members += (2, "bryant", 1)
+  )
+
+  val initialTeams = DBIO.seq(
+    teams += (1, "DB"),
+    teams += (2, "DDT"),
+    teams += (3, "Dirac")
+  )
+
+  val schema = db.run(DBIO.seq(
+    teams.schema.createIfNotExists,
+    members.schema.createIfNotExists,
+    initalMembers,
+    initialTeams
+  ))
 
   try {
     val q = sql"select 'yup' as string;".as[String]
@@ -94,7 +112,7 @@ object SelectOne extends App {
     } yield DBIO.failed(new Exception("Rolling back")).transactionally
 
     // don't need to unpack the future Any
-    val done: Future[_] = db.run(q15)
+    val done: Future[_] = db.run(q10.result)
 
     done.onComplete({
       case Success(res) => {
@@ -117,16 +135,17 @@ object SelectOne extends App {
     })
 
     // running a batch
+    /*
     val jjj: Future[_] = db.run(DBIO.seq(
       q13.andThen(
         q14.andThen(q12)
           .map(r => r.foreach(s => println(s)))
       )
     ))
-
+*/
     Await.result(jj, Duration.Inf)
     println("running batch")
-    Await.result(jjj, Duration.Inf)
+    //Await.result(jjj, Duration.Inf)
     Await.result(done, Duration.Inf)
   } finally db.close()
 }
