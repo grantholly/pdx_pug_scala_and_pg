@@ -1,15 +1,20 @@
+/*
 import Dependencies._
 
 ThisBuild / scalaVersion     := "2.12.8"
 ThisBuild / version          := "0.1.0-SNAPSHOT"
 ThisBuild / organization     := "com.example"
 ThisBuild / organizationName := "pg"
+*/
 
 lazy val root = (project in file("."))
   .settings(
     name := "pg",
+    scalaVersion := "2.12.8",
+    version := "0.1.0-SNAPSHOT",
+    organization := "com.example",
+    organizationName := "pg",
     libraryDependencies ++= Seq(
-      scalaTest % Test,
       "com.typesafe.slick" %% "slick" % "3.3.0",
       "com.typesafe.slick" %% "slick-hikaricp" % "3.3.0",
       "com.typesafe" % "config" % "1.3.2",
